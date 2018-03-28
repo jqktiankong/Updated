@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">UpdateLibrary</string>
+
+    <string name="new_app_downloading">新版本正在下载...</string>
+    <string name="find_new_app">发现新版本，是否下载</string>
+    <string name="shifouxiazai">是否下载</string>
+    <string name="download_fail">下载失败</string>
+</resources>
