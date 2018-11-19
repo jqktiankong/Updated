@@ -1,5 +1,9 @@
 package com.jqk.updatelibrary;
 
+import android.annotation.TargetApi;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -33,15 +37,20 @@ import java.util.TimerTask;
  */
 
 public class UpdateService extends Service {
-
     private int jindu;
-    private File dlFile, file;
+    private File dlFile;
     private DownloadTask downloadTask;
     private long alreadySize;
     private Timer timer;
     private File apkFile;
+    private String apkName = "123.apk";
 
     private String url;
+
+    private NotificationManager manager;
+    public static final String id = "com.jqk.updatelibrary.id";
+    public static final String name = "com.jqk.updatelibrary.name";
+
 
     Handler handler = new Handler() {
         @Override
@@ -50,18 +59,18 @@ public class UpdateService extends Service {
             switch (msg.what) {
                 case 1000:
 //                    L.d("更新数据");
-                    NotificationCompat.Builder builder = new NotificationCompat.Builder(getApplicationContext());
-                    builder.setSmallIcon(R.drawable.ic_launcher);
-//                    builder.setContentTitle("自定义点击事件");
                     RemoteViews remoteViews = new RemoteViews(getPackageName(), R.layout.noti_update);
                     remoteViews.setProgressBar(R.id.progressBar, 100, jindu, false);
                     remoteViews.setTextViewText(R.id.textView, jindu + "%");
 
-                    builder.setContent(remoteViews);
-                    startForeground(1, builder.build());
+                    startForeground(remoteViews);
                     break;
                 case 1001:
                     T.showShort(UpdateService.this, getString(R.string.download_fail));
+                    if (timer != null) {
+                        timer.cancel();
+                    }
+                    manager.cancel(1);
                     stopSelf();
                     break;
                 case 1002:
@@ -71,6 +80,7 @@ public class UpdateService extends Service {
 
                     AutoInstall.setFile(apkFile);
                     AutoInstall.install(UpdateService.this);
+                    manager.cancel(1);
                     stopSelf();
                     break;
             }
@@ -92,20 +102,27 @@ public class UpdateService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
 
-        file = getTemporaryStorageDir(getApplicationContext(), "apk");
+        getTemporaryStorageDir(getApplicationContext(), "apk");
         url = intent.getStringExtra("url");
 
         L.d("url = " + url);
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(getApplicationContext());
-        builder.setSmallIcon(R.drawable.ic_launcher);
-//        builder.setContentTitle("自定义点击事件");
+        if (manager == null) {
+            manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH);
+            channel.setSound(null, Notification.AUDIO_ATTRIBUTES_DEFAULT);
+            channel.enableVibration(false);
+            manager.createNotificationChannel(channel);
+        }
+
         RemoteViews remoteViews = new RemoteViews(getPackageName(), R.layout.noti_update);
         remoteViews.setProgressBar(R.id.progressBar, 100, jindu, false);
         remoteViews.setTextViewText(R.id.textView, jindu + "%");
 
-        builder.setContent(remoteViews);
-        startForeground(1, builder.build());
+        startForeground(remoteViews);
 
         startDL(1, url);
 
@@ -133,7 +150,7 @@ public class UpdateService extends Service {
     // 开始下载
     public void startDL(int tID, String url) {
         if (downloadTask == null) {
-            downloadTask = new UpdateService.DownloadTask();
+            downloadTask = new DownloadTask();
             downloadTask.execute(url);
             if (timer != null) {
                 timer.cancel();
@@ -184,7 +201,7 @@ public class UpdateService extends Service {
                 //已经下载的字节数
                 alreadySize = 0;
                 //将文件写到指定目录中
-                File file = new File(dlFile.getAbsolutePath(), "stardaymart.apk");
+                File file = new File(dlFile.getAbsolutePath(), apkName);
                 apkFile = file;
                 file.delete();
                 file.exists();
@@ -263,7 +280,12 @@ public class UpdateService extends Service {
          */
         public static void install(Context context) {
             mContext = context;
-//          核心是下面几句代码
+//            // 核心是下面几句代码
+//            Intent intent = new Intent(Intent.ACTION_VIEW);
+//            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+//            intent.setDataAndType(Uri.fromFile(new File(mUrl)),
+//                    "application/vnd.android.package-archive");
+//            mContext.startActivity(intent);
 
             Intent intent = new Intent(Intent.ACTION_VIEW);
             // 由于没有在Activity环境下启动Activity,设置下面的标签
@@ -278,6 +300,27 @@ public class UpdateService extends Service {
                 intent.setDataAndType(Uri.fromFile(mFile), "application/vnd.android.package-archive");
             }
             mContext.startActivity(intent);
+        }
+    }
+
+    @TargetApi(26)
+    public void startForeground(RemoteViews remoteViews) {
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(this)
+                    .setContent(remoteViews)
+                    .setOngoing(true)//设置他为一个正在进行的通知。他们通常是用来表示一个后台任务,用户积极参与(如播放音乐) 或以某种方式正在等待,因此占用设备(如一个文件下载,同步操作,主动网络连接)
+                    .setSmallIcon(R.drawable.ic_launcher)//设置通知小ICON
+                    .setChannelId(id);
+            manager.notify(1, builder.build());
+        } else {
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(this)
+                    .setContent(remoteViews)
+                    .setOngoing(true)//设置他为一个正在进行的通知。他们通常是用来表示一个后台任务,用户积极参与(如播放音乐) 或以某种方式正在等待,因此占用设备(如一个文件下载,同步操作,主动网络连接)
+                    .setSmallIcon(R.drawable.ic_launcher)//设置通知小ICON
+                    .setSound(null)
+                    .setVibrate(new long[]{0l});
+            manager.notify(1, builder.build());
         }
     }
 }
